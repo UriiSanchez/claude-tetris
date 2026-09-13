@@ -1,0 +1,115 @@
+name: Claude Issue Formatter
+
+on:
+  issues:
+    types: [opened, edited]
+
+concurrency:
+  group: issue-formatter-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    if: |
+      github.event.issue.state == 'open' &&
+      !github.event.issue.pull_request &&
+      (github.event.action != 'edited' || github.event.changes.body != null || github.event.changes.title != null)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Issue Formatter
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: '--allowedTools "Read,Grep,Glob,Bash(gh label list:*),Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*)"'
+          prompt: |
+            Vas a analizar el issue #${{ github.event.issue.number }} del repositorio ${{ github.repository }}.
+
+            ## Contexto del proyecto
+            Este repo es un Tetris clásico en JavaScript vanilla con HTML5 Canvas y CSS. Sin dependencias,
+            sin build, sin package.json. Toda la lógica vive en `game.js` (single global scope):
+
+            - `index.html`: canvas principal `#board` (COLS×BLOCK por ROWS×BLOCK), canvas `#next-canvas`
+              para la siguiente pieza, panel de score/lines/level, overlay compartido para PAUSE/GAME OVER.
+            - `style.css`: tema visual retro/arcade.
+            - `game.js`: estado y lógica del juego. Piezas clave:
+              - Tablero: matriz ROWS×COLS (`createBoard`), celdas 0 (vacía) o índice de color 1-7.
+              - `PIECES`: matrices de piezas; rotación geométrica vía `rotateCW` (transponer + invertir).
+              - `collide`: choques contra bordes y celdas fijadas (movimiento, rotación, ghost piece).
+              - `tryRotate`: wall kicks probando offsets [0, -1, 1, -2, 2].
+              - `lockPiece` → `merge` + `clearLines` + `spawn`: fija la pieza, limpia líneas completas
+                (de abajo hacia arriba, re-chequeando el mismo índice tras el splice), genera la siguiente.
+              - Scoring: `LINE_SCORES = [0, 100, 300, 500, 800]` × nivel actual; hard drop +2/fila, soft drop +1/fila.
+              - Nivel/velocidad: nivel = floor(lines/10)+1; dropInterval = max(100, 1000-(nivel-1)*90) ms.
+              - `ghostY`: proyección de la pieza actual hacia abajo, dibujada con alpha 0.2.
+              - Loop: `init()` → `spawn()` → `requestAnimationFrame(loop)`; `loop(ts)` acumula tiempo en
+                `dropAccum` y baja la pieza al superar `dropInterval`; `draw()` redibuja todo cada frame.
+              - Input: un único listener `keydown` (flechas, X, Space, P), sin buffering ni DAS/ARR.
+              - Constantes ajustables al inicio: COLS, ROWS, BLOCK, COLORS, LINE_SCORES, dropInterval inicial.
+            - No hay tooling de build/lint/test. Verificar cambios significa abrir `index.html` en un navegador
+              y jugar; no hay pruebas automatizadas.
+
+            Si existe un archivo `CLAUDE.md` en la raíz del repo, léelo primero: puede tener contexto
+            adicional o más actualizado que el resumen anterior.
+
+            ## Paso 1 — Leer el issue
+            Ejecuta `gh issue view ${{ github.event.issue.number }}` para obtener título, cuerpo y
+            etiquetas actuales. Lee también los archivos del repo que sean relevantes para entender el
+            problema descrito (normalmente `game.js`, a veces `index.html` o `style.css`).
+
+            ## Paso 2 — Etiquetar
+            Ejecuta `gh label list` y elige etiquetas **únicamente** de esa lista existente. Reglas:
+            - Nunca inventes ni crees etiquetas nuevas.
+            - Si ninguna etiqueta encaja bien, no apliques ninguna y dilo explícitamente en el diagnóstico.
+            - No quites etiquetas que ya hayan puesto personas.
+            - Aplica las etiquetas elegidas con `gh issue edit ${{ github.event.issue.number }} --add-label "nombre"`.
+
+            ## Paso 3 — Diagnosticar
+            Publica un comentario nuevo con `gh issue comment ${{ github.event.issue.number }} --body "..."`
+            (usa un archivo temporal con el cuerpo si el texto es largo o tiene comillas/backticks, para
+            evitar problemas de escaping). El comentario debe estar en español y seguir esta plantilla:
+
+            ```
+            ## Diagnóstico automático
+
+            **Resumen**
+            (1-2 frases de qué pide o reporta el issue)
+
+            **Tipo**
+            (bug / mejora / duda / documentación) — etiquetas aplicadas y por qué. Si no se aplicó
+            ninguna, indícalo y explica por qué ninguna encajaba.
+
+            **Zona del código afectada**
+            (funciones y ubicaciones concretas, formato `game.js:NNN`, o "no aplica" si es documentación)
+
+            **Causa probable**
+            (solo si es un bug: hipótesis concreta con el fragmento de código que la sustenta)
+
+            **Enfoque sugerido**
+            (pasos de alto nivel para la solución; NO escribas el parche ni implementes el cambio)
+
+            **Cómo verificar**
+            (cómo reproducir o comprobar jugando manualmente; no hay tests automatizados en este proyecto)
+
+            **Preguntas abiertas**
+            (qué falta aclarar; omite esta sección si no hay ninguna)
+
+            ---
+            *Este comentario fue generado automáticamente por Claude.*
+            ```
+
+            ## Restricciones importantes
+            - No modifiques ningún archivo del repositorio.
+            - No abras pull requests.
+            - No cierres el issue.
+            - No implementes la solución, solo diagnostica.
+            - Solo debes etiquetar (paso 2) y comentar (paso 3).
