@@ -76,7 +76,9 @@ jobs:
             ## Paso 3 — Diagnosticar
             Publica un comentario nuevo con `gh issue comment ${{ github.event.issue.number }} --body "..."`
             (usa un archivo temporal con el cuerpo si el texto es largo o tiene comillas/backticks, para
-            evitar problemas de escaping). El comentario debe estar en español y seguir esta plantilla:
+            evitar problemas de escaping). El comentario debe estar en español, usar formato Markdown
+            que GitHub pueda renderizar correctamente (encabezados con `##`, negritas con `**`, listas,
+            bloques de código con backticks, etc.) y seguir esta plantilla:
 
             ```
             ## Diagnóstico automático
