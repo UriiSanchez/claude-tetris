@@ -54,8 +54,21 @@ function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
 }
 
+// Pesos de aparición por tipo de pieza (índice 1-8). La tuerca (8) aparece con
+// menos frecuencia que el resto porque su forma 3x3 es más difícil de encajar.
+const PIECE_WEIGHTS = [0, 3, 3, 3, 3, 3, 3, 3, 1];
+
 function randomPiece() {
-  const type = Math.floor(Math.random() * 8) + 1;
+  const totalWeight = PIECE_WEIGHTS.reduce((a, b) => a + b, 0);
+  let roll = Math.random() * totalWeight;
+  let type = 1;
+  for (let t = 1; t < PIECE_WEIGHTS.length; t++) {
+    if (roll < PIECE_WEIGHTS[t]) {
+      type = t;
+      break;
+    }
+    roll -= PIECE_WEIGHTS[t];
+  }
   const shape = PIECES[type].map(row => [...row]);
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
 }
@@ -102,22 +115,16 @@ function merge() {
 }
 
 function clearLines() {
-  let cleared = 0;
-  for (let r = ROWS - 1; r >= 0; r--) {
-    if (board[r].every(v => v !== 0)) {
-      board.splice(r, 1);
-      board.unshift(new Array(COLS).fill(0));
-      cleared++;
-      r++;
-    }
-  }
-  if (cleared) {
-    lines += cleared;
-    score += (LINE_SCORES[cleared] || 0) * level;
-    level = Math.floor(lines / 10) + 1;
-    dropInterval = Math.max(100, 1000 - (level - 1) * 90);
-    updateHUD();
-  }
+  const remaining = board.filter(row => !row.every(v => v !== 0));
+  const cleared = ROWS - remaining.length;
+  if (!cleared) return;
+  const emptyRows = Array.from({ length: cleared }, () => new Array(COLS).fill(0));
+  board = emptyRows.concat(remaining);
+  lines += cleared;
+  score += (LINE_SCORES[cleared] || 0) * level;
+  level = Math.floor(lines / 10) + 1;
+  dropInterval = Math.max(100, 1000 - (level - 1) * 90);
+  updateHUD();
 }
 
 function ghostY() {
